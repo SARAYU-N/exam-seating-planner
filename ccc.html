@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Exam Seating Planner</title>
+<link href="https://fonts.googleapis.com/..." rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f14; --surface: #161920; --surface2: #1e2230; --surface3: #252a3a;
+    --border: rgba(255,255,255,0.07); --border-hl: rgba(255,255,255,0.14);
+    --accent: #4f9eff; --accent2: #7c5cfc; --green: #34d399; --red: #f87171; --amber: #fbbf24;
+    --text: #e8eaf0; --text2: #8b90a0; --text3: #4a4f62;
+    --radius: 10px; --radius-lg: 16px;
+  }
+  body { font-family: 'Sora', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .header-badge { font-family: 'DM Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-hl); color: var(--text2); }
+
+  .app { display: grid; grid-template-columns: 370px 1fr; flex: 1; min-height: 0; height: calc(100vh - 67px); }
+
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar-section { padding: 18px 22px; border-bottom: 1px solid var(--border); }
+  .sec-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); margin-bottom: 12px; }
+
+  /* Google Sheets Import */
+  .gs-box { background: var(--surface2); border: 1px dashed rgba(79,158,255,0.35); border-radius: var(--radius); padding: 14px; transition: border-color 0.2s; }
+  .gs-box:focus-within { border-color: var(--accent); border-style: solid; }
+  .gs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .gs-title { font-size: 13px; font-weight: 600; }
+  .gs-hint { font-size: 11px; color: var(--text3); margin-bottom: 10px; line-height: 1.6; }
+  .gs-hint code { background: var(--surface3); border-radius: 4px; padding: 1px 6px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent); }
+
+  .col-map { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .col-map-label { font-size: 10px; color: var(--text3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .col-sel { width: 100%; background: var(--surface3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'Sora', sans-serif; font-size: 12px; padding: 6px 8px; outline: none; }
+
+  .gs-textarea { width: 100%; min-height: 100px; background: var(--surface3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; padding: 10px; outline: none; resize: vertical; line-height: 1.7; transition: border-color 0.2s; }
+  .gs-textarea:focus { border-color: var(--accent); }
+  .gs-textarea::placeholder { color: var(--text3); font-size: 11px; }
+
+  .gs-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-import { flex: 1; padding: 9px; font-size: 13px; font-weight: 600; background: linear-gradient(135deg, rgba(79,158,255,0.18), rgba(124,92,252,0.18)); border: 1px solid rgba(79,158,255,0.4); border-radius: var(--radius); color: var(--accent); cursor: pointer; font-family: 'Sora', sans-serif; transition: background 0.2s; }
+  .btn-import:hover { background: linear-gradient(135deg, rgba(79,158,255,0.32), rgba(124,92,252,0.32)); }
+  .btn-ghost { padding: 9px 12px; font-size: 12px; background: transparent; border: 1px solid var(--border-hl); border-radius: var(--radius); color: var(--text3); cursor: pointer; font-family: 'Sora', sans-serif; transition: color 0.2s, border-color 0.2s; }
+  .btn-ghost:hover { color: var(--red); border-color: rgba(248,113,113,0.4); }
+
+  .import-status { font-size: 12px; margin-top: 8px; padding: 7px 11px; border-radius: 6px; display: none; }
+  .import-status.ok { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: var(--green); display: block; }
+  .import-status.fail { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--red); display: block; }
+
+  /* Student preview table */
+  .preview-wrap { margin-top: 12px; }
+  .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .preview-count { font-size: 11px; color: var(--text3); }
+  .preview-scroll { max-height: 170px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border); }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .preview-table th { background: var(--surface3); color: var(--text3); font-weight: 600; padding: 6px 10px; text-align: left; position: sticky; top: 0; z-index: 1; }
+  .preview-table td { padding: 5px 10px; border-top: 1px solid var(--border); color: var(--text2); }
+  .preview-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .dept-pill { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; background: rgba(79,158,255,0.15); color: var(--accent); }
+
+  /* manual add */
+  .manual-toggle { font-size: 12px; color: var(--text3); cursor: pointer; display: flex; align-items: center; gap: 6px; margin-top: 12px; user-select: none; transition: color 0.2s; }
+  .manual-toggle:hover { color: var(--text2); }
+  .manual-section { display: none; margin-top: 10px; }
+  .manual-section.open { display: block; }
+  .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .inp { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'Sora', sans-serif; font-size: 13px; padding: 9px 12px; outline: none; transition: border-color 0.2s; }
+  .inp:focus { border-color: var(--accent); }
+  .inp::placeholder { color: var(--text3); }
+  .inp-sm { width: 80px; flex: none; }
+  .btn-add { background: var(--surface3); border: 1px solid var(--border-hl); border-radius: var(--radius); color: var(--text); font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500; padding: 9px 14px; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+  .btn-add:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* tags */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; }
+  .tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--surface3); border: 1px solid var(--border-hl); color: var(--text2); animation: pop 0.15s ease; }
+  @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .tag-rm { color: var(--green); }
+  .tag button { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+  .tag button:hover { color: var(--red); }
+
+  /* options */
+  .opt-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2); }
+  .opt-row:last-child { border-bottom: none; }
+  .toggle { position: relative; width: 36px; height: 20px; background: var(--surface3); border-radius: 999px; border: 1px solid var(--border-hl); cursor: pointer; transition: background 0.2s; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 999px; transition: left 0.2s; }
+  .toggle.on::after { left: 18px; }
+  .num-input { width: 50px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; padding: 4px 8px; outline: none; text-align: center; }
+
+  .btn-generate { margin: 14px 22px; width: calc(100% - 44px); padding: 13px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: var(--radius); color: #fff; font-family: 'Sora', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s, transform 0.15s; letter-spacing: -0.2px; }
+  .btn-generate:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-generate:active { transform: translateY(0); }
+  .error-msg { font-size: 12px; color: var(--red); padding: 0 22px 8px; min-height: 20px; }
+
+  /* main */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .main-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px 0; border-bottom: 1px solid var(--border); }
+  .algo-tabs { display: flex; gap: 4px; }
+  .algo-tab { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500; padding: 10px 18px 14px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); cursor: pointer; transition: color 0.2s, border-color 0.2s; margin-bottom: -1px; }
+  .algo-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .main-actions { display: flex; gap: 8px; padding-bottom: 14px; }
+  .btn-sm { font-family: 'Sora', sans-serif; font-size: 12px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border-hl); background: var(--surface2); color: var(--text2); cursor: pointer; transition: background 0.2s, color 0.2s; }
+  .btn-sm:hover { background: var(--surface3); color: var(--text); }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 18px 28px; border-bottom: 1px solid var(--border); }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+  .stat-label { font-size: 11px; color: var(--text3); font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 5px; }
+  .stat-value { font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500; }
+  .stat-value.green { color: var(--green); } .stat-value.red { color: var(--red); } .stat-value.amber { color: var(--amber); } .stat-value.blue { color: var(--accent); }
+
+  .legend { display: flex; align-items: center; gap: 16px; font-size: 11px; color: var(--text3); padding: 10px 28px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 4px; }
+
+  .seating-area { flex: 1; overflow-y: auto; padding: 20px 28px; }
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 14px; color: var(--text3); font-size: 14px; padding: 60px 0; text-align: center; line-height: 1.8; }
+  .empty-icon { font-size: 44px; opacity: 0.3; }
+  .empty-steps { display: flex; flex-direction: column; gap: 6px; }
+  .empty-step { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-hl); display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text3); flex-shrink: 0; }
+
+  .rooms-grid { display: flex; flex-direction: column; gap: 22px; }
+  .room-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; animation: slideUp 0.2s ease; }
+  @keyframes slideUp { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .room-card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  .room-name { font-size: 14px; font-weight: 600; }
+  .room-meta { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text3); }
+  .room-fill { height: 3px; background: var(--surface3); border-radius: 999px; overflow: hidden; width: 80px; }
+  .room-fill-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 999px; }
+  .seats-wrap { padding: 14px 18px; }
+  .seats-grid { display: grid; gap: 6px; }
+  .seat { border-radius: 8px; padding: 7px 9px; font-size: 12px; border: 1px solid var(--border); background: var(--surface2); transition: transform 0.12s; }
+  .seat:hover { transform: scale(1.02); }
+  .seat.occupied { background: var(--surface3); border-color: var(--border-hl); }
+  .seat.conflict { border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.07); }
+  .seat.empty { opacity: 0.2; }
+  .seat-num { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+  .seat-name { font-weight: 600; font-size: 12px; color: var(--text); }
+  .seat-dept { font-size: 10px; color: var(--accent); margin-top: 1px; }
+
+  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 999px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎓</div>
+    Exam Seating Planner
+  </div>
+  <div class="header-badge">Greedy + DP Algorithms</div>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+
+    <!-- Google Sheets Import -->
+    <div class="sidebar-section">
+      <div class="sec-label">Students — Google Sheets Import</div>
+
+      <div class="gs-box">
+        <div class="gs-header">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#1e7e45"/>
+            <rect x="5" y="6.5" width="14" height="1.8" rx="0.9" fill="white"/>
+            <rect x="5" y="11" width="14" height="1.8" rx="0.9" fill="white"/>
+            <rect x="5" y="15.5" width="9" height="1.8" rx="0.9" fill="white"/>
+          </svg>
+          <span class="gs-title">Paste from Google Sheets</span>
+        </div>
+        <div class="gs-hint">
+          In your Google Sheet, select your data (e.g. columns <code>Name</code> &amp; <code>Department</code>), press <code>Ctrl+C</code>, then paste below.
+        </div>
+
+        <div class="col-map">
+          <div>
+            <div class="col-map-label">Name column</div>
+            <select class="col-sel" id="colName">
+              <option value="0">A — 1st column</option>
+              <option value="1">B — 2nd column</option>
+              <option value="2">C — 3rd column</option>
+              <option value="3">D — 4th column</option>
+            </select>
+          </div>
+          <div>
+            <div class="col-map-label">Dept column</div>
+            <select class="col-sel" id="colDept">
+              <option value="0">A — 1st column</option>
+              <option value="1" selected>B — 2nd column</option>
+              <option value="2">C — 3rd column</option>
+              <option value="3">D — 4th column</option>
+            </select>
+          </div>
+        </div>
+
+        <textarea class="gs-textarea" id="gsInput"
+          placeholder="Paste copied cells here…&#10;&#10;Alice&#9;CS&#10;Bob&#9;ECE&#10;Carol&#9;Mech&#10;David&#9;Civil"></textarea>
+
+        <div class="gs-actions">
+          <button class="btn-import" onclick="importFromSheets()">⬆ Import Students</button>
+          <button class="btn-ghost" onclick="clearPaste()">Clear</button>
+        </div>
+        <div class="import-status" id="importStatus"></div>
+      </div>
+
+      <!-- Student preview -->
+      <div id="previewWrap" style="display:none">
+        <div class="preview-header">
+          <span class="preview-count" id="previewCount"></span>
+          <button class="btn-ghost" style="font-size:11px;padding:3px 10px" onclick="clearAllStudents()">Remove all</button>
+        </div>
+        <div class="preview-scroll">
+          <table class="preview-table">
+            <thead><tr><th>#</th><th>Name</th><th>Department</th><th></th></tr></thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Manual add (collapsed) -->
+      <div class="manual-toggle" onclick="toggleManual()">
+        <span id="manualArrow">▶</span> Or add manually
+      </div>
+      <div class="manual-section" id="manualSection">
+        <div class="input-row">
+          <input class="inp" id="sName" placeholder="Name" />
+          <input class="inp" id="sDept" placeholder="Dept" />
+          <button class="btn-add" onclick="addStudentManual()">+</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rooms -->
+    <div class="sidebar-section">
+      <div class="sec-label">Exam Rooms</div>
+      <div class="input-row">
+        <input class="inp" id="rName" placeholder="Room name (e.g. Hall A)" />
+        <input class="inp inp-sm" id="rCap" type="number" placeholder="Cap" min="1" max="500" />
+      </div>
+      <button class="btn-add" style="width:100%;margin-bottom:10px" onclick="addRoom()">+ Add Room</button>
+      <div class="tags" id="room-tags"></div>
+    </div>
+
+    <!-- Options -->
+    <div class="sidebar-section">
+      <div class="sec-label">Options</div>
+      <div class="opt-row">
+        <span>Separate same-dept students</span>
+        <div class="toggle on" id="sepToggle" onclick="toggleSep()"></div>
+      </div>
+      <div class="opt-row">
+        <span>Seats per row</span>
+        <input class="num-input" id="spr" type="number" value="5" min="2" max="20" />
+      </div>
+    </div>
+
+    <div id="errorMsg" class="error-msg"></div>
+    <button class="btn-generate" onclick="runAlgorithms()">⚡ Generate Seating Plan</button>
+  </aside>
+
+  <!-- Main Panel -->
+  <main class="main">
+    <div class="main-header">
+      <div class="algo-tabs">
+        <button class="algo-tab active" onclick="switchAlgo('greedy')">Greedy Algorithm</button>
+        <button class="algo-tab" onclick="switchAlgo('dp')">DP Optimized</button>
+      </div>
+      <div class="main-actions">
+        <button class="btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+        <button class="btn-sm" onclick="exportPDFReport()">⬇ Export PDF</button>
+        <button class="btn-sm" onclick="showComparison()">Compare Both</button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat"><div class="stat-label">Total Students</div><div class="stat-value blue" id="st-students">—</div></div>
+      <div class="stat"><div class="stat-label">Rooms Used</div><div class="stat-value blue" id="st-rooms">—</div></div>
+      <div class="stat"><div class="stat-label">Utilization</div><div class="stat-value" id="st-util">—</div></div>
+      <div class="stat"><div class="stat-label">Conflicts</div><div class="stat-value" id="st-conf">—</div></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="legend-dot" style="background:#252a3a;border:1px solid rgba(255,255,255,0.14)"></span>Assigned</span>
+      <span><span class="legend-dot" style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.4)"></span>Same-dept conflict</span>
+      <span><span class="legend-dot" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);opacity:0.4"></span>Empty seat</span>
+    </div>
+
+    <div class="seating-area" id="seatingArea">
+      <div class="empty-state">
+        <div class="empty-icon">🪑</div>
+        <div class="empty-steps">
+          <div class="empty-step"><span class="step-num">1</span> Copy cells from Google Sheets &amp; paste in the sidebar</div>
+          <div class="empty-step"><span class="step-num">2</span> Click Import Students</div>
+          <div class="empty-step"><span class="step-num">3</span> Add your exam rooms</div>
+          <div class="empty-step"><span class="step-num">4</span> Click Generate Seating Plan</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  let students = [], rooms = [], results = {}, currentAlgo = 'greedy', sepOn = true, manualOpen = false;
+
+  // ── Sheets import ──
+  function importFromSheets() {
+    const raw = document.getElementById('gsInput').value.trim();
+    if (!raw) { showStatus('Paste your copied sheet data first.', 'fail'); return; }
+    const colName = parseInt(document.getElementById('colName').value);
+    const colDept = parseInt(document.getElementById('colDept').value);
+    const lines = raw.split('\n').filter(l => l.trim());
+    const added = [], skipped = [];
+    for (const line of lines) {
+      const cells = line.split('\t');
+      const name = (cells[colName] || '').trim();
+      const dept = (cells[colDept] || '').trim();
+      if (!name || name.toLowerCase() === 'name' || name.toLowerCase() === 'student name') { skipped.push(line); continue; }
+      added.push({ name, dept: dept || 'General', id: uid() });
+    }
+    if (!added.length) { showStatus('No valid rows found. Check column mapping.', 'fail'); return; }
+    students = [...students, ...added];
+    showStatus(`✓ Imported ${added.length} student${added.length !== 1 ? 's' : ''}${skipped.length ? ` · ${skipped.length} row${skipped.length !== 1 ? 's' : ''} skipped (header?)` : ''}.`, 'ok');
+    document.getElementById('gsInput').value = '';
+    renderPreview();
+  }
+
+  function clearPaste() {
+    document.getElementById('gsInput').value = '';
+    document.getElementById('importStatus').style.display = 'none';
+  }
+
+  function clearAllStudents() {
+    students = [];
+    renderPreview();
+    document.getElementById('importStatus').style.display = 'none';
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('importStatus');
+    el.textContent = msg;
+    el.className = 'import-status ' + type;
+  }
+
+  function renderPreview() {
+    const wrap = document.getElementById('previewWrap');
+    const body = document.getElementById('previewBody');
+    if (!students.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    document.getElementById('previewCount').textContent = `${students.length} student${students.length !== 1 ? 's' : ''} loaded`;
+    body.innerHTML = students.map((s, i) =>
+      `<tr>
+        <td style="color:var(--text3);font-family:'DM Mono',monospace;width:28px">${i + 1}</td>
+        <td>${escHtml(s.name)}</td>
+        <td><span class="dept-pill">${escHtml(s.dept)}</span></td>
+        <td style="width:28px;text-align:center"><button onclick="removeStudent(${s.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;line-height:1" title="Remove">×</button></td>
+      </tr>`
+    ).join('');
+  }
+
+  // ── Manual add ──
+  function toggleManual() {
+    manualOpen = !manualOpen;
+    document.getElementById('manualSection').classList.toggle('open', manualOpen);
+    document.getElementById('manualArrow').textContent = manualOpen ? '▼' : '▶';
+  }
+
+  function addStudentManual() {
+    const name = document.getElementById('sName').value.trim();
+    const dept = document.getElementById('sDept').value.trim();
+    if (!name) return flash('sName');
+    students.push({ name, dept: dept || 'General', id: uid() });
+    document.getElementById('sName').value = '';
+    document.getElementById('sDept').value = '';
+    renderPreview();
+  }
+
+  function removeStudent(id) { students = students.filter(s => s.id !== id); renderPreview(); }
+
+  // ── Rooms ──
+  function addRoom() {
+    const name = document.getElementById('rName').value.trim();
+    const cap = parseInt(document.getElementById('rCap').value);
+    if (!name || !cap || cap < 1) return flash('rCap');
+    rooms.push({ name, cap, id: uid() });
+    document.getElementById('rName').value = '';
+    document.getElementById('rCap').value = '';
+    renderRoomTags();
+  }
+
+  function removeRoom(id) { rooms = rooms.filter(r => r.id !== id); renderRoomTags(); }
+
+  function renderRoomTags() {
+    document.getElementById('room-tags').innerHTML = rooms.map(r =>
+      `<span class="tag tag-rm">${escHtml(r.name)} <span style="color:var(--text3)">(${r.cap})</span><button onclick="removeRoom(${r.id})">×</button></span>`
+    ).join('');
+  }
+
+  function toggleSep() {
+    sepOn = !sepOn;
+    document.getElementById('sepToggle').classList.toggle('on', sepOn);
+  }
+
+  // ── Algorithms ──
+  function greedyAssign(studs, rms, sep) {
+    let s = [...studs];
+    if (sep) {
+      const byDept = {};
+      s.forEach(st => (byDept[st.dept] = byDept[st.dept] || []).push(st));
+      const depts = Object.values(byDept);
+      const out = []; let i = 0;
+      while (out.length < s.length) { const d = depts[i % depts.length]; if (d.length) out.push(d.shift()); i++; }
+      s = out;
+    }
+    const asgn = rms.map(r => ({ room: r, seats: [] }));
+    let si = 0;
+    for (const a of asgn) while (si < s.length && a.seats.length < a.room.cap) a.seats.push(s[si++]);
+    return asgn;
+  }
+
+  function dpAssign(studs, rms, sep) {
+    if (!sep) return greedyAssign(studs, rms, false);
+    const byDept = {};
+    studs.forEach(st => (byDept[st.dept] = byDept[st.dept] || []).push({ ...st }));
+    const deptKeys = Object.keys(byDept).sort((a, b) => byDept[b].length - byDept[a].length);
+    const ordered = [];
+    while (ordered.length < studs.length) {
+      let added = false;
+      for (const dk of deptKeys) { if (byDept[dk] && byDept[dk].length) { ordered.push(byDept[dk].shift()); added = true; } }
+      if (!added) break;
+    }
+    const asgn = rms.map(r => ({ room: r, seats: [] }));
+    let si = 0;
+    for (const a of asgn) while (si < ordered.length && a.seats.length < a.room.cap) a.seats.push(ordered[si++]);
+    return asgn;
+  }
+
+  function countConflicts(asgn, spr) {
+    let c = 0;
+    for (const { seats } of asgn) for (let i = 0; i < seats.length - 1; i++)
+      if (i % spr !== spr - 1 && seats[i] && seats[i+1] && seats[i].dept === seats[i+1].dept) c++;
+    return c;
+  }
+
+  function conflictSet(asgn, spr) {
+    const conf = new Set();
+    for (const { seats } of asgn) for (let i = 0; i < seats.length - 1; i++)
+      if (i % spr !== spr - 1 && seats[i] && seats[i+1] && seats[i].dept === seats[i+1].dept)
+        { conf.add(seats[i].id); conf.add(seats[i+1].id); }
+    return conf;
+  }
+
+  // ── Run ──
+  function runAlgorithms() {
+    document.getElementById('errorMsg').textContent = '';
+    if (!students.length) return err('Import or add at least one student.');
+    if (!rooms.length) return err('Add at least one room.');
+    const totalCap = rooms.reduce((s, r) => s + r.cap, 0);
+    if (students.length > totalCap) return err(`Not enough seats. Need ${students.length}, have ${totalCap}.`);
+    const spr = parseInt(document.getElementById('spr').value) || 5;
+    results.greedy = greedyAssign(students, rooms, sepOn);
+    results.dp = dpAssign(students, rooms, sepOn);
+    results.spr = spr;
+    render();
+  }
+
+  function render() {
+    const spr = results.spr;
+    const data = results[currentAlgo];
+    if (!data) return;
+    const conf = countConflicts(data, spr);
+    const confIds = conflictSet(data, spr);
+    const totalCap = rooms.reduce((s, r) => s + r.cap, 0);
+    const util = Math.round((students.length / totalCap) * 100);
+
+    document.getElementById('st-students').textContent = students.length;
+    document.getElementById('st-rooms').textContent = rooms.length;
+    const utilEl = document.getElementById('st-util');
+    utilEl.textContent = util + '%';
+    utilEl.className = 'stat-value ' + (util > 90 ? 'red' : util > 70 ? 'amber' : 'green');
+    const confEl = document.getElementById('st-conf');
+    confEl.textContent = conf;
+    confEl.className = 'stat-value ' + (conf === 0 ? 'green' : conf < 4 ? 'amber' : 'red');
+
+    let html = '<div class="rooms-grid">';
+    for (const { room, seats } of data) {
+      const fill = Math.round((seats.length / room.cap) * 100);
+      html += `<div class="room-card">
+        <div class="room-card-header">
+          <div><div class="room-name">${escHtml(room.name)}</div><div class="room-meta">${seats.length} / ${room.cap} seats occupied</div></div>
+          <div style="text-align:right"><div class="room-fill"><div class="room-fill-bar" style="width:${fill}%"></div></div><div class="room-meta" style="margin-top:4px">${fill}%</div></div>
+        </div>
+        <div class="seats-wrap"><div class="seats-grid" style="grid-template-columns:repeat(${spr},1fr)">`;
+      for (let i = 0; i < room.cap; i++) {
+        const s = seats[i];
+        if (s) {
+          html += `<div class="seat occupied${confIds.has(s.id) ? ' conflict' : ''}">
+            <div class="seat-num">#${String(i+1).padStart(2,'0')}</div>
+            <div class="seat-name">${escHtml(s.name)}</div>
+            <div class="seat-dept">${escHtml(s.dept)}</div>
+          </div>`;
+        } else {
+          html += `<div class="seat empty"><div class="seat-num">#${String(i+1).padStart(2,'0')}</div></div>`;
+        }
+      }
+      html += `</div></div></div>`;
+    }
+    html += '</div>';
+    document.getElementById('seatingArea').innerHTML = html;
+  }
+
+  function switchAlgo(type) {
+    currentAlgo = type;
+    document.querySelectorAll('.algo-tab').forEach((t, i) => t.classList.toggle('active', (i===0&&type==='greedy')||(i===1&&type==='dp')));
+    if (results.greedy) render();
+  }
+
+  function showComparison() {
+    if (!results.greedy) return err('Generate a plan first.');
+    const spr = results.spr;
+    const gc = countConflicts(results.greedy, spr);
+    const dc = countConflicts(results.dp, spr);
+    alert(`Algorithm Comparison\n\nGreedy conflicts  : ${gc}\nDP optimized      : ${dc}\nImprovement       : ${gc - dc} fewer conflict${gc - dc !== 1 ? 's' : ''} with DP`);
+  }
+
+  function exportCSV() {
+    if (!results[currentAlgo]) return err('Generate a plan first.');
+    let csv = 'Room,Seat #,Student,Department\n';
+    for (const { room, seats } of results[currentAlgo])
+      seats.forEach((s, i) => { csv += `"${room.name}",${i+1},"${s.name}","${s.dept}"\n`; });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `seating_${currentAlgo}.csv`;
+    a.click();
+  }
+
+  function uid() { return Date.now() + Math.floor(Math.random() * 99999); }
+  function err(msg) { document.getElementById('errorMsg').textContent = msg; }
+  function flash(id) { const el = document.getElementById(id); el.style.borderColor = 'var(--red)'; setTimeout(() => el.style.borderColor = '', 800); }
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.activeElement.id === 'sName') addStudentManual();
+    if (e.key === 'Enter' && document.activeElement.id === 'rName') addRoom();
+  });
+
+  renderRoomTags();
+
+  function exportPDFReport() {
+  if (!results[currentAlgo]) return err('Generate a plan first.');
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF();
+
+  let y = 15;
+
+  // HEADER
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(16);
+  pdf.text("University", 105, y, { align: "center" });
+
+  y += 8;
+  pdf.setFontSize(13);
+  pdf.text("Semester Examination", 105, y, { align: "center" });
+
+  y += 7;
+  pdf.setFontSize(12);
+  pdf.text("Seating Arrangement — April 2026", 105, y, { align: "center" });
+
+  y += 10;
+  pdf.line(14, y, 196, y);
+  y += 8;
+
+  // SUMMARY
+  const totalStudents = students.length;
+  const totalRooms = rooms.length;
+  const totalSeats = rooms.reduce((s, r) => s + r.cap, 0);
+
+  pdf.autoTable({
+    startY: y,
+    head: [["Total Students", "Rooms Used", "Total Seats"]],
+    body: [[totalStudents, totalRooms, totalSeats]],
+    theme: "grid",
+    styles: { halign: "center" }
+  });
+
+  y = pdf.lastAutoTable.finalY + 10;
+
+  const data = results[currentAlgo];
+  const spr = results.spr;
+
+  // ROOMS
+  data.forEach(({ room, seats }) => {
+
+    if (y > 250) {
+      pdf.addPage();
+      y = 15;
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text(`Room: ${room.name}`, 14, y);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text(`Capacity: ${room.cap} | Seated: ${seats.length}`, 140, y);
+
+    y += 6;
+
+    let tableBody = [];
+    let row = [];
+
+    seats.forEach((s, i) => {
+      const label = s
+        ? `S${String(i + 1).padStart(2, '0')}\n${s.name}\n${s.dept}`
+        : `S${String(i + 1).padStart(2, '0')}\nEMPTY`;
+
+      row.push(label);
+
+      if ((i + 1) % spr === 0) {
+        tableBody.push(row);
+        row = [];
+      }
+    });
+
+    if (row.length) tableBody.push(row);
+
+    pdf.autoTable({
+      startY: y,
+      body: tableBody,
+      theme: "grid",
+      styles: {
+        fontSize: 8,
+        halign: "center",
+        valign: "middle",
+        cellPadding: 2
+      }
+    });
+
+    y = pdf.lastAutoTable.finalY + 10;
+  });
+
+  // FOOTER
+  if (y > 260) {
+    pdf.addPage();
+    y = 20;
+  }
+
+  pdf.setFontSize(10);
+  pdf.text("Exam Controller Signature: ____________________", 14, y);
+  pdf.text("Invigilator Signature: ____________________", 120, y);
+
+  pdf.save("exam_seating_arrangement.pdf");
+}
+</script>
+</body>
+</html>
